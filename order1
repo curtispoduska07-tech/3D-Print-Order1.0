@@ -43,7 +43,7 @@ function pay() {
   let priceText = document.getElementById('price').innerText;
   let amount = priceText.replace("Estimated Price: $", "");
 
-  let venmo = "https://venmo.com/@CurtisPoduska?txn=pay&amount=" 
+  let venmo = "https://venmo.com/CurtisPoduska?txn=pay&amount=" 
               + amount + "&note=3D%20Print";
 
   window.open(venmo, "_blank");
