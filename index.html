@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>3D Print Order</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 700px;
+      margin: auto;
+    }
+
+    input, select, button, textarea {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      box-sizing: border-box;
+    }
+
+    h2, h3, h4 {
+      text-align: center;
+    }
+
+    .small-note {
+      font-size: 14px;
+      color: #555;
+      margin-top: -4px;
+      margin-bottom: 10px;
+    }
+
+    .print-card,
+    .piece-box,
+    .review-box {
+      border: 1px solid #ccc;
+      padding: 14px;
+      border-radius: 8px;
+      margin: 14px 0;
+      background: #fff;
+    }
+
+    .checkbox-group {
+      margin: 10px 0;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+      padding: 0;
+    }
+
+    .color-preview {
+      width: 42px;
+      height: 42px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      flex-shrink: 0;
+    }
+
+    .piece-color-preview {
+      width: 80px;
+      height: 80px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      display: block;
+      margin-top: 8px;
+    }
+
+    .status-message {
+      font-size: 14px;
+      margin-top: 8px;
+      margin-bottom: 12px;
+      white-space: pre-line;
+    }
+
+    .row-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    .row-buttons button {
+      width: 100%;
+    }
+
+    .item-total {
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .review-box {
+      display: none;
+    }
+
+    .review-line {
+      margin: 6px 0;
+      word-break: break-word;
+    }
+
+    .review-item {
+      border-top: 1px solid #ddd;
+      padding-top: 10px;
+      margin-top: 10px;
+    }
+
+    .color-grams-entry {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 10px;
+      margin: 10px 0;
+      background: #fff;
+    }
+
+    .color-grams-entry-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .color-grams-entry img {
+      width: 42px;
+      height: 42px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+    }
+
+    .color-order-buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    .color-order-buttons button {
+      width: auto;
+      padding: 8px 12px;
+    }
+
+    .admin-hotspot {
+      position: fixed;
+      right: 0;
+      bottom: 0;
+      width: 90px;
+      height: 90px;
+      z-index: 9999;
+      cursor: default;
+      background: transparent;
+    }
+
+    @media (max-width: 700px) {
+      .row-buttons {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>3D Print Order</h2>
+
+  <label>First Name</label>
+  <input type="text" id="firstName" required>
+
+  <label>Last Name</label>
+  <input type="text" id="lastName" required>
+
+  <label>Email</label>
+  <input type="email" id="email" required>
+
+  <div id="printsContainer"></div>
+
+  <div class="row-buttons">
+    <button type="button" onclick="addPrintCard()">Add Another Print</button>
+  </div>
+
+  <h3 id="grandTotal">Grand Total: $0.00</h3>
+  <div id="statusMessage" class="status-message"></div>
+
+  <div class="row-buttons">
+    <button id="reviewButton" type="button" onclick="showReviewOrder()">Review Order</button>
+  </div>
+
+  <div id="reviewBox" class="review-box">
+    <h3>Review Your Order</h3>
+    <div id="reviewContent"></div>
+
+    <div class="cf-turnstile" data-sitekey="0x4AAAAAACzLEeERV5xYLYkO"></div>
+
+    <div class="row-buttons">
+      <button type="button" onclick="editOrder()">Go Back and Edit</button>
+      <button id="confirmPayButton" type="button" onclick="confirmAndPay()">Confirm & Pay with Venmo</button>
+    </div>
+  </div>
+
+  <a href="https://curtispoduska07-tech.github.io/3D-Print-Order1.0/admin.html" class="admin-hotspot" aria-label="Admin access"></a>
+
+  <script>
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw0vBKbaSunkJXMJl5vpLtlpBOZ8Udq9lgGgo93Oh2xwXq7x5B_Bm4IJbnaGu38a3vf/exec";
+
+    const filamentPrices = {
+      "BASIC PLA": 0.024,
+      "PLA MATTE": 0.024,
+      "HF PETG": 0.03
+    };
+
+    const nozzleOptions = [
+      "0.4mm Hardened Steel",
+      "0.2mm Stainless Steel"
+    ];
+
+    const filamentColors = {};
+    const colorImageUrls = {};
+    let liveFilamentOptions = {};
+    let printCardCounter = 0;
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function getColorImageUrl(filamentType, colorName) {
+      return colorImageUrls[filamentType]?.[colorName] || "";
+    }
+
+    function createSelectOptions(options, placeholder) {
+      let html = `<option value="">${placeholder}</option>`;
+      options.forEach(opt => {
+        html += `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`;
+      });
+      return html;
+    }
+
+    function setStatus(message, isError = false) {
+      const status = document.getElementById("statusMessage");
+      status.textContent = message || "";
+      status.style.color = isError ? "#b00020" : "#1a1a1a";
+    }
+
+    function rebuildFilamentMapsFromLiveOptions() {
+      const newFilamentColors = {};
+      const newColorImageUrls = {};
+
+      Object.keys(liveFilamentOptions).forEach(type => {
+        newFilamentColors[type] = liveFilamentOptions[type].map(item => item.color);
+        newColorImageUrls[type] = {};
+
+        liveFilamentOptions[type].forEach(item => {
+          newColorImageUrls[type][item.color] = item.imageUrl || "";
+        });
+      });
+
+      Object.keys(filamentColors).forEach(key => delete filamentColors[key]);
+      Object.keys(colorImageUrls).forEach(key => delete colorImageUrls[key]);
+
+      Object.assign(filamentColors, newFilamentColors);
+      Object.assign(colorImageUrls, newColorImageUrls);
+    }
+
+    async function loadFilamentOptions() {
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "getFilamentOptions"
+        })
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || "Could not load filament options.");
+      }
+
+      liveFilamentOptions = result.filamentOptions || {};
+      rebuildFilamentMapsFromLiveOptions();
+    }
+
+    function getFilamentTypeOptionsHtml() {
+      const types = Object.keys(filamentColors).sort((a, b) => a.localeCompare(b));
+      let html = `<option value="">Select Filament Type</option>`;
+      types.forEach(type => {
+        html += `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`;
+      });
+      return html;
+    }
+
+    function addPrintCard() {
+      printCardCounter++;
+      const cardId = printCardCounter;
+      const container = document.getElementById("printsContainer");
+
+      const card = document.createElement("div");
+      card.className = "print-card";
+      card.id = `printCard_${cardId}`;
+
+      card.innerHTML = `
+        <h3>Print ${cardId}</h3>
+
+        <label>Model Link</label>
+        <input type="url" id="modelLink_${cardId}" placeholder="Paste model link here" oninput="calculateAll()">
+
+        <label>Print Type</label>
+        <select id="printType_${cardId}" onchange="updatePrintType(${cardId}); calculateAll();">
+          <option value="single">Single Print</option>
+          <option value="multi">Multi-Part Print</option>
+        </select>
+
+        <div id="singlePrintSection_${cardId}">
+          <label>Filament Type</label>
+          <select id="filament_${cardId}" onchange="updateColorOptions(${cardId}); calculateAll();">
+            ${getFilamentTypeOptionsHtml()}
+          </select>
+
+          <label>Nozzle Type</label>
+          <select id="singleNozzle_${cardId}" onchange="calculateAll()">
+            ${createSelectOptions(nozzleOptions, "Select Nozzle Type")}
+          </select>
+
+          <label>Color Choices</label>
+          <div class="small-note">Choose up to 5 colors, enter grams for each selected color, and move them up/down for print order</div>
+          <div id="colorSection_${cardId}" class="checkbox-group"></div>
+          <div id="colorGramsSection_${cardId}"></div>
+        </div>
+
+        <div id="multiPrintSection_${cardId}" style="display:none;">
+          <label>Number of Pieces</label>
+          <input
+            type="number"
+            id="pieceCount_${cardId}"
+            min="1"
+            max="20"
+            value="1"
+            oninput="updatePieceOptions(${cardId}); calculateAll();"
+            onchange="updatePieceOptions(${cardId}); calculateAll();"
+          >
+
+          <div id="piecesContainer_${cardId}"></div>
+        </div>
+
+        <label>Total Grams</label>
+        <input
+          type="number"
+          id="grams_${cardId}"
+          min="0.01"
+          step="any"
+          oninput="calculateAll()"
+          onchange="calculateAll()"
+          readonly
+        >
+
+        <label>Hours</label>
+        <input
+          type="number"
+          id="hours_${cardId}"
+          min="0.01"
+          step="any"
+          oninput="calculateAll()"
+          onchange="calculateAll()"
+        >
+
+        <div class="item-total" id="itemTotal_${cardId}">Item Total: $0.00</div>
+
+        <div class="row-buttons">
+          <button type="button" onclick="removePrintCard(${cardId})">Remove This Print</button>
+        </div>
+      `;
+
+      container.appendChild(card);
+      updateColorOptions(cardId);
+      updatePieceOptions(cardId);
+      updatePrintType(cardId);
+      calculateAll();
+    }
+
+    function removePrintCard(cardId) {
+      const card = document.getElementById(`printCard_${cardId}`);
+      if (card) {
+        card.remove();
+        recalculatePrintNumbers();
+        calculateAll();
+      }
+    }
+
+    function recalculatePrintNumbers() {
+      const cards = document.querySelectorAll(".print-card");
+      cards.forEach((card, index) => {
+        const heading = card.querySelector("h3");
+        if (heading) heading.textContent = `Print ${index + 1}`;
+      });
+    }
+
+    function updatePrintType(cardId) {
+      const printType = document.getElementById(`printType_${cardId}`).value;
+      const singleSection = document.getElementById(`singlePrintSection_${cardId}`);
+      const multiSection = document.getElementById(`multiPrintSection_${cardId}`);
+      const gramsField = document.getElementById(`grams_${cardId}`);
+
+      if (printType === "single") {
+        singleSection.style.display = "block";
+        multiSection.style.display = "none";
+        gramsField.readOnly = true;
+        updateSinglePrintColorGramsInputs(cardId);
+      } else {
+        singleSection.style.display = "none";
+        multiSection.style.display = "block";
+        gramsField.readOnly = true;
+        updatePieceOptions(cardId);
+      }
+
+      calculateAll();
+    }
+
+    function updateColorOptions(cardId) {
+      const filamentSelect = document.getElementById(`filament_${cardId}`);
+      const colorSection = document.getElementById(`colorSection_${cardId}`);
+      const selectedFilament = filamentSelect.value;
+
+      colorSection.innerHTML = "";
+      const colors = filamentColors[selectedFilament] || [];
+
+      colors.forEach(function(color, index) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "checkbox-item";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = `color_${cardId}_${index}`;
+        checkbox.value = color;
+        checkbox.onchange = function() {
+          limitColorsAndCalculate(cardId, this);
+        };
+
+        const preview = document.createElement("img");
+        preview.className = "color-preview";
+        preview.alt = color;
+        preview.src = getColorImageUrl(selectedFilament, color);
+
+        const label = document.createElement("label");
+        label.htmlFor = checkbox.id;
+        label.textContent = color;
+        label.style.margin = "0";
+        label.style.width = "auto";
+
+        wrapper.appendChild(checkbox);
+        wrapper.appendChild(preview);
+        wrapper.appendChild(label);
+        colorSection.appendChild(wrapper);
+      });
+
+      updateSinglePrintColorGramsInputs(cardId);
+    }
+
+    function limitColorsAndCalculate(cardId, checkboxElement) {
+      const checkedBoxes = document.querySelectorAll(`#colorSection_${cardId} input[type="checkbox"]:checked`);
+
+      if (checkedBoxes.length > 5) {
+        checkboxElement.checked = false;
+        alert("You can select up to 5 colors.");
+        return;
+      }
+
+      updateSinglePrintColorGramsInputs(cardId);
+      calculateAll();
+    }
+
+    function getSelectedColors(cardId) {
+      return Array.from(document.querySelectorAll(`#colorSection_${cardId} input[type="checkbox"]:checked`))
+        .map(cb => cb.value);
+    }
+
+    function getSelectedColorCount(cardId) {
+      return getSelectedColors(cardId).length;
+    }
+
+    function updateSinglePrintColorGramsInputs(cardId, preservedData = null) {
+      const container = document.getElementById(`colorGramsSection_${cardId}`);
+      const filamentType = document.getElementById(`filament_${cardId}`).value;
+      const selectedColors = getSelectedColors(cardId);
+
+      let existingData = preservedData;
+      if (!existingData) {
+        existingData = [];
+        const entries = container.querySelectorAll(".color-grams-entry");
+        entries.forEach(entry => {
+          const color = entry.dataset.color || "";
+          const grams = Number(entry.querySelector("input[type='number']")?.value || 0);
+          if (color) {
+            existingData.push({ color, gramsUsed: grams });
+          }
+        });
+      }
+
+      let orderedColors = [];
+
+      if (preservedData && preservedData.length) {
+        preservedData.forEach(item => {
+          if (selectedColors.includes(item.color)) {
+            orderedColors.push({
+              color: item.color,
+              gramsUsed: Number(item.gramsUsed || 0)
+            });
+          }
+        });
+
+        selectedColors.forEach(color => {
+          if (!orderedColors.some(item => item.color === color)) {
+            orderedColors.push({
+              color,
+              gramsUsed: 0
+            });
+          }
+        });
+      } else {
+        selectedColors.forEach(color => {
+          const found = existingData.find(item => item.color === color);
+          orderedColors.push({
+            color,
+            gramsUsed: found ? Number(found.gramsUsed || 0) : 0
+          });
+        });
+      }
+
+      container.innerHTML = "";
+
+      orderedColors.forEach((item, index) => {
+        const imageUrl = getColorImageUrl(filamentType, item.color);
+        const isFirst = index === 0;
+        const isLast = index === orderedColors.length - 1;
+
+        const div = document.createElement("div");
+        div.className = "color-grams-entry";
+        div.dataset.color = item.color;
+
+        div.innerHTML = `
+          <div class="color-grams-entry-top">
+            <img src="${imageUrl}" alt="${escapeHtml(item.color)}">
+            <strong>${escapeHtml(item.color)}</strong>
+          </div>
+
+          <label>Grams for ${escapeHtml(item.color)}</label>
+          <input
+            type="number"
+            min="0.01"
+            step="any"
+            placeholder="Enter grams for ${escapeHtml(item.color)}"
+            value="${item.gramsUsed > 0 ? item.gramsUsed : ""}"
+            oninput="syncSinglePrintTotalGrams(${cardId})"
+            onchange="syncSinglePrintTotalGrams(${cardId})"
+          >
+
+          <div class="color-order-buttons">
+            <button type="button" ${isFirst ? "disabled" : ""} onclick="moveSinglePrintColorEntry(${cardId}, ${index}, -1)">Move Up</button>
+            <button type="button" ${isLast ? "disabled" : ""} onclick="moveSinglePrintColorEntry(${cardId}, ${index}, 1)">Move Down</button>
+          </div>
+        `;
+
+        container.appendChild(div);
+      });
+
+      syncSinglePrintTotalGrams(cardId);
+    }
+
+    function moveSinglePrintColorEntry(cardId, index, direction) {
+      const container = document.getElementById(`colorGramsSection_${cardId}`);
+      const entries = Array.from(container.querySelectorAll(".color-grams-entry")).map(entry => ({
+        color: entry.dataset.color,
+        gramsUsed: Number(entry.querySelector("input[type='number']")?.value || 0)
+      }));
+
+      const newIndex = index + direction;
+      if (newIndex < 0 || newIndex >= entries.length) return;
+
+      const temp = entries[index];
+      entries[index] = entries[newIndex];
+      entries[newIndex] = temp;
+
+      updateSinglePrintColorGramsInputs(cardId, entries);
+    }
+
+    function syncSinglePrintTotalGrams(cardId) {
+      const printType = document.getElementById(`printType_${cardId}`).value;
+      if (printType !== "single") return;
+
+      const gramInputs = document.querySelectorAll(`#colorGramsSection_${cardId} input[type="number"]`);
+      let total = 0;
+
+      gramInputs.forEach(input => {
+        total += Number(input.value || 0);
+      });
+
+      const gramsField = document.getElementById(`grams_${cardId}`);
+      gramsField.value = total > 0 ? total : "";
+      calculateAll();
+    }
+
+    function getSinglePrintColorBreakdown(cardId) {
+      const entries = document.querySelectorAll(`#colorGramsSection_${cardId} .color-grams-entry`);
+      const breakdown = [];
+
+      entries.forEach(entry => {
+        const color = entry.dataset.color || "";
+        const grams = Number(entry.querySelector("input[type='number']")?.value || 0);
+        if (color) {
+          breakdown.push({
+            color,
+            gramsUsed: grams
+          });
+        }
+      });
+
+      return breakdown;
+    }
+
+    function updatePieceOptions(cardId) {
+      const piecesContainer = document.getElementById(`piecesContainer_${cardId}`);
+      const pieceCount = Math.max(1, Number(document.getElementById(`pieceCount_${cardId}`)?.value) || 1);
+
+      piecesContainer.innerHTML = "";
+
+      for (let i = 1; i <= pieceCount; i++) {
+        const pieceBox = document.createElement("div");
+        pieceBox.className = "piece-box";
+
+        pieceBox.innerHTML = `
+          <h4>Piece ${i}</h4>
+
+          <label>Filament Type</label>
+          <select id="pieceFilament_${cardId}_${i}" onchange="updatePieceColorEntries(${cardId}, ${i}); calculateAll();">
+            ${getFilamentTypeOptionsHtml()}
+          </select>
+
+          <label>Nozzle Type</label>
+          <select id="pieceNozzle_${cardId}_${i}" onchange="calculateAll()">
+            ${createSelectOptions(nozzleOptions, "Select Nozzle Type")}
+          </select>
+
+          <label>How Many Colors Does Piece ${i} Have?</label>
+          <input
+            type="number"
+            id="pieceColorCount_${cardId}_${i}"
+            min="1"
+            max="5"
+            value="1"
+            oninput="updatePieceColorEntries(${cardId}, ${i}); calculateAll();"
+            onchange="updatePieceColorEntries(${cardId}, ${i}); calculateAll();"
+          >
+
+          <div class="small-note">Choose up to 5 colors, enter grams for each color, and move them up/down for print order</div>
+          <div id="pieceColorEntries_${cardId}_${i}"></div>
+        `;
+
+        piecesContainer.appendChild(pieceBox);
+        updatePieceColorEntries(cardId, i);
+      }
+
+      syncMultiPrintTotalGrams(cardId);
+    }
+
+    function updatePieceColorEntries(cardId, pieceNumber, preservedData = null) {
+      const filamentSelect = document.getElementById(`pieceFilament_${cardId}_${pieceNumber}`);
+      const colorEntriesContainer = document.getElementById(`pieceColorEntries_${cardId}_${pieceNumber}`);
+      const colorCountInput = document.getElementById(`pieceColorCount_${cardId}_${pieceNumber}`);
+
+      if (!filamentSelect || !colorEntriesContainer || !colorCountInput) return;
+
+      const selectedFilament = filamentSelect.value;
+      const colors = filamentColors[selectedFilament] || [];
+      let colorCount = Math.max(1, Number(colorCountInput.value) || 1);
+
+      if (colorCount > 5) {
+        colorCount = 5;
+        colorCountInput.value = 5;
+      }
+
+      let existingData = preservedData;
+      if (!existingData) {
+        existingData = [];
+        const entries = colorEntriesContainer.querySelectorAll(".color-grams-entry");
+        entries.forEach(entry => {
+          const color = entry.querySelector("select")?.value || "";
+          const grams = Number(entry.querySelector("input[type='number']")?.value || 0);
+          existingData.push({ color, gramsUsed: grams });
+        });
+      }
+
+      while (existingData.length < colorCount) {
+        existingData.push({ color: "", gramsUsed: 0 });
+      }
+
+      existingData = existingData.slice(0, colorCount);
+
+      colorEntriesContainer.innerHTML = "";
+
+      existingData.forEach((item, index) => {
+        const isFirst = index === 0;
+        const isLast = index === existingData.length - 1;
+        const imageUrl = getColorImageUrl(selectedFilament, item.color);
+
+        let optionsHtml = `<option value="">Select Color ${index + 1}</option>`;
+        colors.forEach(color => {
+          const selected = item.color === color ? "selected" : "";
+          optionsHtml += `<option value="${escapeHtml(color)}" ${selected}>${escapeHtml(color)}</option>`;
+        });
+
+        const div = document.createElement("div");
+        div.className = "color-grams-entry";
+        div.dataset.index = index;
+
+        div.innerHTML = `
+          <div class="color-grams-entry-top">
+            <img id="pieceColorPreview_${cardId}_${pieceNumber}_${index + 1}" src="${imageUrl}" alt="${escapeHtml(item.color || "Color preview")}">
+            <strong>Piece ${pieceNumber} Color ${index + 1}</strong>
+          </div>
+
+          <label>Color ${index + 1}</label>
+          <select onchange="updatePieceColorPreview(${cardId}, ${pieceNumber}, ${index + 1}); syncMultiPrintTotalGrams(${cardId}); calculateAll();">
+            ${optionsHtml}
+          </select>
+
+          <label>Grams for Color ${index + 1}</label>
+          <input
+            type="number"
+            min="0.01"
+            step="any"
+            placeholder="Enter grams for this color"
+            value="${item.gramsUsed > 0 ? item.gramsUsed : ""}"
+            oninput="syncMultiPrintTotalGrams(${cardId})"
+            onchange="syncMultiPrintTotalGrams(${cardId})"
+          >
+
+          <div class="color-order-buttons">
+            <button type="button" ${isFirst ? "disabled" : ""} onclick="movePieceColorEntry(${cardId}, ${pieceNumber}, ${index}, -1)">Move Up</button>
+            <button type="button" ${isLast ? "disabled" : ""} onclick="movePieceColorEntry(${cardId}, ${pieceNumber}, ${index}, 1)">Move Down</button>
+          </div>
+        `;
+
+        colorEntriesContainer.appendChild(div);
+        updatePieceColorPreview(cardId, pieceNumber, index + 1);
+      });
+
+      syncMultiPrintTotalGrams(cardId);
+    }
+
+    function movePieceColorEntry(cardId, pieceNumber, index, direction) {
+      const container = document.getElementById(`pieceColorEntries_${cardId}_${pieceNumber}`);
+      const entries = Array.from(container.querySelectorAll(".color-grams-entry")).map(entry => ({
+        color: entry.querySelector("select")?.value || "",
+        gramsUsed: Number(entry.querySelector("input[type='number']")?.value || 0)
+      }));
+
+      const newIndex = index + direction;
+      if (newIndex < 0 || newIndex >= entries.length) return;
+
+      const temp = entries[index];
+      entries[index] = entries[newIndex];
+      entries[newIndex] = temp;
+
+      updatePieceColorEntries(cardId, pieceNumber, entries);
+    }
+
+    function updatePieceColorPreview(cardId, pieceNumber, colorIndex) {
+      const container = document.getElementById(`pieceColorEntries_${cardId}_${pieceNumber}`);
+      if (!container) return;
+
+      const entry = container.querySelectorAll(".color-grams-entry")[colorIndex - 1];
+      if (!entry) return;
+
+      const filamentType = document.getElementById(`pieceFilament_${cardId}_${pieceNumber}`)?.value || "";
+      const colorName = entry.querySelector("select")?.value || "";
+      const preview = document.getElementById(`pieceColorPreview_${cardId}_${pieceNumber}_${colorIndex}`);
+      if (!preview) return;
+
+      const imageUrl = getColorImageUrl(filamentType, colorName);
+
+      if (filamentType && colorName && imageUrl) {
+        preview.src = imageUrl;
+        preview.alt = colorName;
+        preview.style.display = "block";
+      } else {
+        preview.src = "";
+        preview.alt = "Color preview";
+        preview.style.display = "none";
+      }
+    }
+
+    function getPieceColorBreakdown(cardId, pieceNumber) {
+      const container = document.getElementById(`pieceColorEntries_${cardId}_${pieceNumber}`);
+      if (!container) return [];
+
+      const breakdown = [];
+      const entries = container.querySelectorAll(".color-grams-entry");
+
+      entries.forEach(entry => {
+        const color = entry.querySelector("select")?.value || "";
+        const grams = Number(entry.querySelector("input[type='number']")?.value || 0);
+        breakdown.push({
+          color,
+          gramsUsed: grams
+        });
+      });
+
+      return breakdown;
+    }
+
+    function getPieceSelectedColors(cardId, pieceNumber) {
+      return getPieceColorBreakdown(cardId, pieceNumber)
+        .map(item => item.color)
+        .filter(Boolean);
+    }
+
+    function getPieceColorCount(cardId, pieceNumber) {
+      return getPieceSelectedColors(cardId, pieceNumber).length;
+    }
+
+    function syncMultiPrintTotalGrams(cardId) {
+      const printType = document.getElementById(`printType_${cardId}`).value;
+      if (printType !== "multi") return;
+
+      const pieceCount = Math.max(1, Number(document.getElementById(`pieceCount_${cardId}`)?.value) || 1);
+      let total = 0;
+
+      for (let i = 1; i <= pieceCount; i++) {
+        const breakdown = getPieceColorBreakdown(cardId, i);
+        breakdown.forEach(item => {
+          total += Number(item.gramsUsed || 0);
+        });
+      }
+
+      const gramsField = document.getElementById(`grams_${cardId}`);
+      gramsField.value = total > 0 ? total : "";
+      calculateAll();
+    }
+
+    function calculateItem(cardId) {
+      const printType = document.getElementById(`printType_${cardId}`).value;
+      const grams = Number(document.getElementById(`grams_${cardId}`).value) || 0;
+      const hours = Number(document.getElementById(`hours_${cardId}`).value) || 0;
+
+      const pricePerHour = 0.5;
+      const machine = 0.1;
+      const maintenance = 0.52;
+      const extraColorCost = 0.52;
+
+      let total = 0;
+
+      if (printType === "single") {
+        const filamentType = document.getElementById(`filament_${cardId}`).value;
+        const pricePerGram = Number(filamentPrices[filamentType] || 0);
+        const selectedColors = getSelectedColorCount(cardId);
+        const colorCount = selectedColors > 0 ? selectedColors : 1;
+
+        total =
+          (grams * pricePerGram) +
+          (hours * (pricePerHour + machine + maintenance)) +
+          ((colorCount - 1) * extraColorCost);
+      } else {
+        const pieceCount = Math.max(1, Number(document.getElementById(`pieceCount_${cardId}`).value) || 1);
+        let totalPricePerGram = 0;
+        let validPieces = 0;
+        let totalExtraColorCharges = 0;
+
+        for (let i = 1; i <= pieceCount; i++) {
+          const pieceFilament = document.getElementById(`pieceFilament_${cardId}_${i}`)?.value || "";
+          const pieceColorCount = getPieceColorCount(cardId, i);
+          const actualColorCount = pieceColorCount > 0 ? pieceColorCount : 1;
+
+          if (pieceFilament && filamentPrices[pieceFilament]) {
+            totalPricePerGram += Number(filamentPrices[pieceFilament]);
+            validPieces++;
+          }
+
+          totalExtraColorCharges += (actualColorCount - 1) * extraColorCost;
+        }
+
+        const avgPricePerGram = validPieces > 0 ? (totalPricePerGram / validPieces) : 0;
+
+        total =
+          (grams * avgPricePerGram) +
+          (hours * (pricePerHour + machine + maintenance)) +
+          totalExtraColorCharges;
+      }
+
+      document.getElementById(`itemTotal_${cardId}`).textContent = `Item Total: $${Number(total).toFixed(2)}`;
+      return total;
+    }
+
+    function calculateAll() {
+      const cards = document.querySelectorAll(".print-card");
+      let grandTotal = 0;
+
+      cards.forEach(card => {
+        const cardId = card.id.split("_")[1];
+        grandTotal += calculateItem(cardId);
+      });
+
+      document.getElementById("grandTotal").textContent = `Grand Total: $${grandTotal.toFixed(2)}`;
+    }
+
+    function buildOrderData() {
+      const firstName = document.getElementById("firstName").value.trim();
+      const lastName = document.getElementById("lastName").value.trim();
+      const email = document.getElementById("email").value.trim();
+
+      const cards = document.querySelectorAll(".print-card");
+      const items = [];
+      let totalGrams = 0;
+      let totalHours = 0;
+      let grandTotal = 0;
+
+      cards.forEach(card => {
+        const cardId = Number(card.id.replace("printCard_", ""));
+        const printType = document.getElementById(`printType_${cardId}`).value;
+        const modelLink = document.getElementById(`modelLink_${cardId}`).value.trim();
+        const grams = Number(document.getElementById(`grams_${cardId}`).value) || 0;
+        const hours = Number(document.getElementById(`hours_${cardId}`).value) || 0;
+        const itemTotal = Number(calculateItem(cardId)) || 0;
+
+        totalGrams += grams;
+        totalHours += hours;
+        grandTotal += itemTotal;
+
+        if (printType === "single") {
+          const filament = document.getElementById(`filament_${cardId}`).value;
+          const nozzle = document.getElementById(`singleNozzle_${cardId}`).value;
+          const colorBreakdown = getSinglePrintColorBreakdown(cardId);
+
+          items.push({
+            modelLink,
+            printType: "single",
+            grams,
+            hours,
+            singleFilament: filament,
+            singleNozzle: nozzle,
+            singleColorBreakdown: colorBreakdown,
+            singleColors: colorBreakdown.map(entry => `${entry.color}: ${Number(entry.gramsUsed || 0).toFixed(2)}g`).join(", "),
+            pieceCount: 1,
+            pieceDetails: "",
+            pieceStructured: [],
+            totalPrice: itemTotal
+          });
+        } else {
+          const pieceCount = Number(document.getElementById(`pieceCount_${cardId}`).value) || 1;
+          const pieces = [];
+          const pieceStructured = [];
+
+          for (let i = 1; i <= pieceCount; i++) {
+            const filament = document.getElementById(`pieceFilament_${cardId}_${i}`)?.value || "";
+            const nozzle = document.getElementById(`pieceNozzle_${cardId}_${i}`)?.value || "";
+            const pieceBreakdown = getPieceColorBreakdown(cardId, i);
+
+            const pieceColorText = pieceBreakdown
+              .map(entry => `${entry.color}: ${Number(entry.gramsUsed || 0).toFixed(2)}g`)
+              .join(", ");
+
+            pieces.push(`Piece ${i}: ${filament} - ${nozzle} - ${pieceColorText}`);
+
+            pieceStructured.push({
+              pieceNumber: i,
+              filamentType: filament,
+              nozzle,
+              colorBreakdown: pieceBreakdown
+            });
+          }
+
+          items.push({
+            modelLink,
+            printType: "multi",
+            grams,
+            hours,
+            singleFilament: "",
+            singleNozzle: "",
+            singleColorBreakdown: [],
+            singleColors: "",
+            pieceCount,
+            pieceDetails: pieces.join(" | "),
+            pieceStructured,
+            multiPieceBreakdown: pieceStructured,
+            totalPrice: itemTotal
+          });
+        }
+      });
+
+      return {
+        firstName,
+        lastName,
+        email,
+        items,
+        totalGrams,
+        totalHours,
+        totalPrice: grandTotal
+      };
+    }
+
+    function validateForm() {
+      const firstName = document.getElementById("firstName").value.trim();
+      const lastName = document.getElementById("lastName").value.trim();
+      const email = document.getElementById("email").value.trim();
+
+      if (!firstName) {
+        alert("Please enter your first name.");
+        return false;
+      }
+
+      if (!lastName) {
+        alert("Please enter your last name.");
+        return false;
+      }
+
+      if (!email) {
+        alert("Please enter your email.");
+        return false;
+      }
+
+      const cards = document.querySelectorAll(".print-card");
+      if (cards.length < 1) {
+        alert("Please add at least 1 print.");
+        return false;
+      }
+
+      for (const card of cards) {
+        const cardId = Number(card.id.replace("printCard_", ""));
+        const modelLink = document.getElementById(`modelLink_${cardId}`).value.trim();
+        const printType = document.getElementById(`printType_${cardId}`).value;
+        const grams = document.getElementById(`grams_${cardId}`).value.trim();
+        const hours = document.getElementById(`hours_${cardId}`).value.trim();
+
+        if (!modelLink) {
+          alert(`Please enter the model link for Print ${cardId}.`);
+          return false;
+        }
+
+        if (!printType) {
+          alert(`Please select the print type for Print ${cardId}.`);
+          return false;
+        }
+
+        if (printType === "single") {
+          const filament = document.getElementById(`filament_${cardId}`).value;
+          const nozzle = document.getElementById(`singleNozzle_${cardId}`).value;
+          const selectedColors = getSelectedColorCount(cardId);
+          const breakdown = getSinglePrintColorBreakdown(cardId);
+          const seen = new Set();
+
+          if (!filament) {
+            alert(`Please select a filament type for Print ${cardId}.`);
+            return false;
+          }
+
+          if (!nozzle) {
+            alert(`Please select a nozzle type for Print ${cardId}.`);
+            return false;
+          }
+
+          if (selectedColors < 1) {
+            alert(`Please select at least 1 color for Print ${cardId}.`);
+            return false;
+          }
+
+          for (let i = 0; i < breakdown.length; i++) {
+            const entry = breakdown[i];
+
+            if (!entry.color) {
+              alert(`Please choose every selected color for Print ${cardId}.`);
+              return false;
+            }
+
+            if (seen.has(entry.color)) {
+              alert(`Duplicate color "${entry.color}" in Print ${cardId}.`);
+              return false;
+            }
+
+            seen.add(entry.color);
+
+            if (Number(entry.gramsUsed || 0) <= 0) {
+              alert(`Please enter grams for ${entry.color} in Print ${cardId}.`);
+              return false;
+            }
+          }
+        }
+
+        if (printType === "multi") {
+          const pieceCount = Number(document.getElementById(`pieceCount_${cardId}`).value) || 0;
+
+          if (pieceCount < 1) {
+            alert(`Please enter the number of pieces for Print ${cardId}.`);
+            return false;
+          }
+
+          for (let i = 1; i <= pieceCount; i++) {
+            const pieceFilament = document.getElementById(`pieceFilament_${cardId}_${i}`)?.value || "";
+            const pieceNozzle = document.getElementById(`pieceNozzle_${cardId}_${i}`)?.value || "";
+            const pieceColorCount = Math.max(1, Number(document.getElementById(`pieceColorCount_${cardId}_${i}`)?.value) || 1);
+            const breakdown = getPieceColorBreakdown(cardId, i);
+            const seenColors = new Set();
+
+            if (!pieceFilament) {
+              alert(`Please select a filament type for Print ${cardId}, Piece ${i}.`);
+              return false;
+            }
+
+            if (!pieceNozzle) {
+              alert(`Please select a nozzle type for Print ${cardId}, Piece ${i}.`);
+              return false;
+            }
+
+            if (pieceColorCount < 1) {
+              alert(`Please enter how many colors Piece ${i} has in Print ${cardId}.`);
+              return false;
+            }
+
+            if (pieceColorCount > 5) {
+              alert(`Piece ${i} in Print ${cardId} can only have up to 5 colors.`);
+              return false;
+            }
+
+            for (let j = 0; j < breakdown.length; j++) {
+              const entry = breakdown[j];
+
+              if (!entry.color) {
+                alert(`Please select Color ${j + 1} for Print ${cardId}, Piece ${i}.`);
+                return false;
+              }
+
+              if (seenColors.has(entry.color)) {
+                alert(`Print ${cardId}, Piece ${i} has duplicate color "${entry.color}".`);
+                return false;
+              }
+
+              seenColors.add(entry.color);
+
+              if (Number(entry.gramsUsed || 0) <= 0) {
+                alert(`Please enter grams for ${entry.color} in Print ${cardId}, Piece ${i}.`);
+                return false;
+              }
+            }
+          }
+        }
+
+        if (!grams || Number(grams) <= 0) {
+          alert(`Please enter grams greater than 0 for Print ${cardId}.`);
+          return false;
+        }
+
+        if (!hours || Number(hours) <= 0) {
+          alert(`Please enter hours greater than 0 for Print ${cardId}.`);
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    function showReviewOrder() {
+      if (!validateForm()) return;
+
+      const orderData = buildOrderData();
+      const reviewBox = document.getElementById("reviewBox");
+      const reviewContent = document.getElementById("reviewContent");
+
+      let html = `
+        <div class="review-line"><strong>First Name:</strong> ${escapeHtml(orderData.firstName)}</div>
+        <div class="review-line"><strong>Last Name:</strong> ${escapeHtml(orderData.lastName)}</div>
+        <div class="review-line"><strong>Email:</strong> ${escapeHtml(orderData.email)}</div>
+      `;
+
+      orderData.items.forEach((item, index) => {
+        if (item.printType === "single") {
+          html += `
+            <div class="review-item">
+              <div class="review-line"><strong>Print ${index + 1}</strong></div>
+              <div class="review-line"><strong>Model Link:</strong> ${escapeHtml(item.modelLink)}</div>
+              <div class="review-line"><strong>Print Type:</strong> ${escapeHtml(item.printType)}</div>
+              <div class="review-line"><strong>Filament:</strong> ${escapeHtml(item.singleFilament)}</div>
+              <div class="review-line"><strong>Nozzle:</strong> ${escapeHtml(item.singleNozzle)}</div>
+              <div class="review-line"><strong>Colors:</strong> ${escapeHtml(item.singleColors)}</div>
+              <div class="review-line"><strong>Grams:</strong> ${Number(item.grams).toFixed(2)}</div>
+              <div class="review-line"><strong>Hours:</strong> ${Number(item.hours).toFixed(2)}</div>
+              <div class="review-line"><strong>Item Total:</strong> $${Number(item.totalPrice).toFixed(2)}</div>
+            </div>
+          `;
+        } else {
+          const pieceHtml = item.pieceStructured.map(piece => {
+            const pieceColors = piece.colorBreakdown
+              .map(entry => `${entry.color}: ${Number(entry.gramsUsed || 0).toFixed(2)}g`)
+              .join(", ");
+
+            return `<div class="review-line"><strong>Piece ${piece.pieceNumber}:</strong> ${escapeHtml(piece.filamentType)} | ${escapeHtml(piece.nozzle)} | ${escapeHtml(pieceColors)}</div>`;
+          }).join("");
+
+          html += `
+            <div class="review-item">
+              <div class="review-line"><strong>Print ${index + 1}</strong></div>
+              <div class="review-line"><strong>Model Link:</strong> ${escapeHtml(item.modelLink)}</div>
+              <div class="review-line"><strong>Print Type:</strong> ${escapeHtml(item.printType)}</div>
+              <div class="review-line"><strong>Number of Pieces:</strong> ${escapeHtml(item.pieceCount)}</div>
+              ${pieceHtml}
+              <div class="review-line"><strong>Grams:</strong> ${Number(item.grams).toFixed(2)}</div>
+              <div class="review-line"><strong>Hours:</strong> ${Number(item.hours).toFixed(2)}</div>
+              <div class="review-line"><strong>Item Total:</strong> $${Number(item.totalPrice).toFixed(2)}</div>
+            </div>
+          `;
+        }
+      });
+
+      html += `
+        <div class="review-item">
+          <div class="review-line"><strong>Total Grams:</strong> ${Number(orderData.totalGrams).toFixed(2)}</div>
+          <div class="review-line"><strong>Total Hours:</strong> ${Number(orderData.totalHours).toFixed(2)}</div>
+          <div class="review-line"><strong>Grand Total:</strong> $${Number(orderData.totalPrice).toFixed(2)}</div>
+        </div>
+      `;
+
+      reviewContent.innerHTML = html;
+      reviewBox.style.display = "block";
+      reviewBox.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function editOrder() {
+      document.getElementById("reviewBox").style.display = "none";
+    }
+
+    async function submitOrderToAppsScript(orderData) {
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        mode: "cors",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(orderData)
+      });
+
+      const text = await response.text();
+      return JSON.parse(text);
+    }
+
+    async function confirmAndPay() {
+      if (!validateForm()) return;
+
+      const button = document.getElementById("confirmPayButton");
+      const orderData = buildOrderData();
+
+      const turnstileToken = document.querySelector('[name="cf-turnstile-response"]')?.value || "";
+      if (!turnstileToken) {
+        alert("Please complete the verification first.");
+        return;
+      }
+
+      orderData.turnstileToken = turnstileToken;
+
+      try {
+        button.disabled = true;
+        setStatus("Submitting your order...");
+
+        const result = await submitOrderToAppsScript(orderData);
+
+        if (!result.success) {
+          throw new Error(result.error || "Order submission failed.");
+        }
+
+        setStatus("Order submitted. Redirecting to Venmo...");
+
+        const venmoNote = encodeURIComponent(
+          `3D Print Order - ${orderData.firstName} ${orderData.lastName} - $${Number(orderData.totalPrice).toFixed(2)}`
+        );
+
+        const venmoAmount = Number(orderData.totalPrice).toFixed(2);
+        const venmoUrl = `https://account.venmo.com/pay?txn=pay&amount=${venmoAmount}&note=${venmoNote}`;
+
+        window.location.href = venmoUrl;
+      } catch (error) {
+        console.error(error);
+        setStatus("There was an error submitting the order. Please try again.", true);
+        alert(error.message || "There was an error submitting the order. Please try again.");
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    (async function initCustomerPage() {
+      try {
+        await loadFilamentOptions();
+      } catch (error) {
+        console.error(error);
+      }
+      addPrintCard();
+    })();
+  </script>
+</body>
+</html>
