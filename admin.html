@@ -65,6 +65,18 @@
       width: 100%;
     }
 
+    .card-action-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .card-action-buttons button {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
     .admin-color-entry-grid {
       display: grid;
       grid-template-columns: 1fr 120px;
@@ -306,7 +318,8 @@
 
     @media (max-width: 700px) {
       .inventory-toolbar,
-      .admin-color-entry-grid {
+      .admin-color-entry-grid,
+      .card-action-buttons {
         grid-template-columns: 1fr;
       }
 
@@ -445,7 +458,8 @@
         <h3>Update Selected Filament From Scale</h3>
 
         <div class="muted-text">
-          Select exactly 1 filament card below, copy the weight from your Stamps.com scale software, choose how the weight should be interpreted, then update the selected filament.
+          Scale clipboard should be in <strong>LBS & OZ</strong> mode. Spool weight is already built in as <strong>7.4 oz</strong>.
+          In dry box mode, saving tare from clipboard assumes the clipboard is the <strong>dry box only</strong>, and it automatically adds the 7.4 oz spool weight for you.
         </div>
 
         <label>Weight Mode</label>
@@ -464,10 +478,11 @@
           <label>Saved Dry Box Tare (g)</label>
           <input type="number" id="scaleDryBoxTareGrams" min="0" step="any" readonly placeholder="Saved dry box tare will appear here">
 
-          <label>Set / Replace Dry Box Tare From Clipboard</label>
           <div class="muted-text">
-            Use this when the dry box is empty of filament but includes the empty spool/setup you want to subtract forever.
+            Click this after copying the <strong>dry box only</strong> weight from the scale.
+            The system automatically adds the built-in 7.4 oz empty spool weight before saving.
           </div>
+
           <div class="row-buttons">
             <button type="button" onclick="saveDryBoxTareFromClipboard()">Save Dry Box Tare From Clipboard</button>
           </div>
@@ -696,6 +711,7 @@
 
   <script>
     const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby93_f6TU_cf5rr63h96_3rsImX2gUnzQxI_kfsRxLlpGKZz5hraocBuJhQEbYswCyU/exec";
+    const BUILT_IN_SPOOL_WEIGHT_OZ = 7.4;
 
     const filamentColors = {};
     const colorImageUrls = {};
@@ -830,6 +846,8 @@
         adminUnlocked = true;
         document.getElementById("adminSection").style.display = "block";
         status.innerText = "Admin unlocked.";
+
+        document.getElementById("scaleEmptySpoolWeightOz").value = BUILT_IN_SPOOL_WEIGHT_OZ;
 
         await loadFilamentOptions();
         updateAdminColorEntries();
@@ -1167,6 +1185,19 @@
       return selectedItems[0];
     }
 
+    function selectOnlyInventoryItemByKey(key) {
+      selectedInventoryKeys.clear();
+      selectedInventoryKeys.add(key);
+      updateSelectedInventoryCount();
+      renderInventory();
+
+      const selectedItem = getSingleSelectedInventoryItem();
+      const tareField = document.getElementById("scaleDryBoxTareGrams");
+      if (tareField) {
+        tareField.value = selectedItem ? Number(selectedItem.dryBoxTareGrams || 0).toFixed(2) : "";
+      }
+    }
+
     function toggleInventorySelection(key, checked) {
       if (checked) {
         selectedInventoryKeys.add(key);
@@ -1258,12 +1289,19 @@
             <div class="inventory-detail"><strong>Current:</strong> ${current.toFixed(2)}g</div>
             <div class="inventory-detail"><strong>Starting:</strong> ${starting.toFixed(2)}g</div>
             <div class="inventory-detail"><strong>Reorder At:</strong> ${reorder.toFixed(2)}g</div>
+            <div class="inventory-detail"><strong>Dry Box Tare:</strong> ${Number(item.dryBoxTareGrams || 0).toFixed(2)}g</div>
 
             <div class="inventory-bar-wrap">
               <div class="inventory-bar-label">${percent.toFixed(0)}% remaining</div>
               <div class="inventory-bar">
                 <div class="inventory-bar-fill" style="width:${percent}%"></div>
               </div>
+            </div>
+
+            <div class="card-action-buttons">
+              <button type="button" onclick="quickSelectOnly('${safeKey}')">Select Only</button>
+              <button type="button" onclick="quickUpdateFromScale('${safeKey}')">Update From Scale</button>
+              <button type="button" onclick="quickSaveDryBoxTare('${safeKey}')">Save Dry Box Tare</button>
             </div>
           </div>
         `;
@@ -1381,6 +1419,8 @@
       spoolSection.style.display = mode === "filament_on_spool" ? "block" : "none";
       dryBoxSection.style.display = mode === "filament_on_spool_in_drybox" ? "block" : "none";
 
+      document.getElementById("scaleEmptySpoolWeightOz").value = BUILT_IN_SPOOL_WEIGHT_OZ;
+
       const selectedItem = getSingleSelectedInventoryItem();
       if (mode === "filament_on_spool_in_drybox" && selectedItem) {
         document.getElementById("scaleDryBoxTareGrams").value = Number(selectedItem.dryBoxTareGrams || 0).toFixed(2);
@@ -1409,24 +1449,29 @@
           throw new Error("Could not read a valid weight from the clipboard.");
         }
 
+        const combinedTareGrams = parsedWeight + ouncesToGrams(BUILT_IN_SPOOL_WEIGHT_OZ);
+
         const result = await apiPost({
           action: "setInventoryDryBoxTare",
           filamentType: selectedItem.filamentType,
           color: selectedItem.color,
-          dryBoxTareGrams: parsedWeight
+          dryBoxTareGrams: combinedTareGrams
         });
 
         if (!result.success) {
           throw new Error(result.error || "Could not save dry box tare.");
         }
 
-        document.getElementById("scaleDryBoxTareGrams").value = parsedWeight.toFixed(2);
+        document.getElementById("scaleClipboardWeight").value = parsedWeight.toFixed(2);
+        document.getElementById("scaleDryBoxTareGrams").value = combinedTareGrams.toFixed(2);
 
         await loadInventory();
 
         alert(
           `Saved dry box tare for ${selectedItem.filamentType} / ${selectedItem.color}\n\n` +
-          `Dry Box Tare: ${parsedWeight.toFixed(2)} g`
+          `Dry Box Only: ${parsedWeight.toFixed(2)} g\n` +
+          `Built-in Spool: ${ouncesToGrams(BUILT_IN_SPOOL_WEIGHT_OZ).toFixed(2)} g\n` +
+          `Saved Combined Tare: ${combinedTareGrams.toFixed(2)} g`
         );
       } catch (error) {
         console.error(error);
@@ -1464,7 +1509,7 @@
         if (mode === "filament_only") {
           filamentOnlyWeight = parsedWeight;
         } else if (mode === "filament_on_spool") {
-          const emptySpoolWeightOz = Number(document.getElementById("scaleEmptySpoolWeightOz").value || 0);
+          const emptySpoolWeightOz = Number(document.getElementById("scaleEmptySpoolWeightOz").value || BUILT_IN_SPOOL_WEIGHT_OZ);
           const emptySpoolWeightGrams = ouncesToGrams(emptySpoolWeightOz);
           filamentOnlyWeight = Math.max(0, parsedWeight - emptySpoolWeightGrams);
         } else if (mode === "filament_on_spool_in_drybox") {
@@ -1507,24 +1552,48 @@
     }
 
     function parseScaleClipboardWeightInGrams(text) {
-      const cleaned = String(text || "").trim().toUpperCase();
+      if (!text) return null;
 
-      const lbOzMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*LB[S]?\s*(\d+(?:\.\d+)?)\s*OZ/);
+      const cleaned = String(text)
+        .replace(/,/g, "")
+        .trim()
+        .toUpperCase();
+
+      const lbOzMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*LB[S]?\.*\s*(\d+(?:\.\d+)?)\s*OZ/);
       if (lbOzMatch) {
         const lbs = Number(lbOzMatch[1] || 0);
         const oz = Number(lbOzMatch[2] || 0);
         return ((lbs * 16) + oz) * 28.349523125;
       }
 
-      const gmMatch = cleaned.match(/([\d.,]+)\s*(GM|G)?/);
+      const ozMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*OZ/);
+      if (ozMatch) {
+        const oz = Number(ozMatch[1] || 0);
+        return oz * 28.349523125;
+      }
+
+      const gmMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*(GM|G)/);
       if (gmMatch) {
-        const value = Number(String(gmMatch[1]).replace(/,/g, ""));
-        if (!isNaN(value)) {
-          return value;
-        }
+        return Number(gmMatch[1]);
       }
 
       return null;
+    }
+
+    function quickSelectOnly(key) {
+      selectOnlyInventoryItemByKey(key);
+    }
+
+    async function quickUpdateFromScale(key) {
+      selectOnlyInventoryItemByKey(key);
+      await readScaleClipboardAndUpdate();
+    }
+
+    async function quickSaveDryBoxTare(key) {
+      document.getElementById("scaleWeightMode").value = "filament_on_spool_in_drybox";
+      toggleScaleModeInputs();
+      selectOnlyInventoryItemByKey(key);
+      await saveDryBoxTareFromClipboard();
     }
 
     function toggleHistoricalUsageForm() {
